@@ -3,6 +3,19 @@ local Config = {
     ToggleUIKey = Enum.KeyCode.RightShift,
     FocusChatKey = Enum.KeyCode.T,
 }
+--====================================
+-- AUTO RE-EXECUTE ON TELEPORT
+--====================================
+
+local SCRIPT_URL = "https://raw.githubusercontent.com/xxz18902-arch/diadwiiad/refs/heads/main/dw"
+
+local function QueueReExecute()
+    if queue_on_teleport then
+        queue_on_teleport('loadstring(game:HttpGet("' .. SCRIPT_URL .. '"))()')
+    elseif syn and syn.queue_on_teleport then
+        syn.queue_on_teleport('loadstring(game:HttpGet("' .. SCRIPT_URL .. '"))()')
+    end
+end
 
 local ADMIN_TOKEN = "CHANGE_THIS_TOKEN_123"
 
@@ -132,8 +145,113 @@ Instance.new("UICorner", onlineList).CornerRadius = UDim.new(0,12)
 local onlineLayout = Instance.new("UIListLayout", onlineList)
 onlineLayout.Padding = UDim.new(0,6)
 onlineLayout.SortOrder = Enum.SortOrder.LayoutOrder
+--==============================
+-- PLAYER ACTION POPUP (JOIN / INVITE)
+--==============================
+
+local actionFrame = Instance.new("Frame", frame)
+actionFrame.Size = UDim2.new(0,150,0,80)
+actionFrame.BackgroundColor3 = Color3.fromRGB(30,30,36)
+actionFrame.Visible = false
+actionFrame.ZIndex = 10
+Instance.new("UICorner", actionFrame).CornerRadius = UDim.new(0,12)
+
+local selectedPlayer = nil
+
+local inviteBtn = Instance.new("TextButton", actionFrame)
+inviteBtn.Size = UDim2.new(1,-10,0,30)
+inviteBtn.Position = UDim2.new(0,5,0,5)
+inviteBtn.Text = "Invite"
+inviteBtn.Font = Enum.Font.GothamBold
+inviteBtn.TextSize = 13
+inviteBtn.BackgroundColor3 = Color3.fromRGB(0,140,255)
+inviteBtn.TextColor3 = Color3.new(1,1,1)
+inviteBtn.ZIndex = 11
+Instance.new("UICorner", inviteBtn).CornerRadius = UDim.new(1,0)
+
+local joinBtn = Instance.new("TextButton", actionFrame)
+joinBtn.Size = UDim2.new(1,-10,0,30)
+joinBtn.Position = UDim2.new(0,5,0,40)
+joinBtn.Text = "Join"
+joinBtn.Font = Enum.Font.GothamBold
+joinBtn.TextSize = 13
+joinBtn.BackgroundColor3 = Color3.fromRGB(0,200,120)
+joinBtn.TextColor3 = Color3.new(1,1,1)
+joinBtn.ZIndex = 11
+Instance.new("UICorner", joinBtn).CornerRadius = UDim.new(1,0)
+
+inviteBtn.MouseButton1Click:Connect(function()
+    if selectedPlayer then
+        ws:Send("INVITE|" .. selectedPlayer .. "|" .. game.PlaceId .. "|" .. game.JobId)
+    end
+    actionFrame.Visible = false
+end)
+
+joinBtn.MouseButton1Click:Connect(function()
+    if selectedPlayer then
+        ws:Send("JOIN_REQUEST|" .. selectedPlayer .. "|" .. player.Name)
+    end
+    actionFrame.Visible = false
+end)
 
 local onlineUsers = {}
+--==============================
+-- ONLINE SYSTEM ADDITIONS
+--==============================
+
+local function addOnlineUser(name)
+    if onlineUsers[name] then return end
+
+    local btn = Instance.new("TextButton", onlineList)
+    btn.Text = name
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 13
+    btn.TextColor3 = Color3.fromRGB(235,235,240)
+    btn.BackgroundTransparency = 1
+    btn.Size = UDim2.new(1,0,0,18)
+    btn.AutoButtonColor = false
+
+    -- إعادة تفعيل الـClick لكل لاعب
+    btn.MouseButton1Click:Connect(function()
+        selectedPlayer = name
+        actionFrame.Position = UDim2.new(0, frame.AbsolutePosition.X + frame.AbsoluteSize.X - 170,
+                                         0, frame.AbsolutePosition.Y + 60)
+        actionFrame.Visible = true
+    end)
+
+    onlineUsers[name] = btn
+    updateOnlineUsers()
+end
+
+local function removeOnlineUser(name)
+    if onlineUsers[name] then
+        onlineUsers[name]:Destroy()
+        onlineUsers[name] = nil
+        updateOnlineUsers()
+    end
+end
+
+local function resolveName(partial)
+    partial = partial:lower()
+    for name,_ in pairs(onlineUsers) do
+        if name:lower():sub(1,#partial) == partial then
+            return name
+        end
+    end
+    return nil
+end
+
+local function sendOnline()
+    pcall(function()
+        ws:Send("ONLINE|" .. player.Name)
+    end)
+end
+
+local function sendOffline()
+    pcall(function()
+        ws:Send("OFFLINE|" .. player.Name)
+    end)
+end
 
 local function updateOnlineUsers()
     onlineList.CanvasSize = UDim2.new(0,0,0,onlineLayout.AbsoluteContentSize.Y)
@@ -145,15 +263,76 @@ local function scroll()
 end
 
 local emojis = {
-    [":smile:"]="😄",[":laugh:"]="😂",[":heart:"]="❤️",[":thumbsup:"]="👍",
-    [":fire:"]="🔥",[":cry:"]="😢",[":angry:"]="😡",[":surprised:"]="😲",
-    [":wink:"]="😉",[":kiss:"]="😘",[":star:"]="⭐",[":poop:"]="💩",
-    [":ok:"]="👌",[":pray:"]="🙏",[":clap:"]="👏",[":muscle:"]="💪",
-    [":wave:"]="👋",[":eyes:"]="👀",[":sleeping:"]="😴",[":zzz:"]="💤",
-    [":confused:"]="😕",[":thinking:"]="🤔",[":sunglasses:"]="😎",
-    [":party:"]="🥳",[":gift:"]="🎁",[":cake:"]="🎂",[":tada:"]="🎉",
-    [":money:"]="💵",[":broken_heart:"]="💔"
+    [":smile:"] = "😄",
+    [":laugh:"] = "😂",
+    [":heart:"] = "❤️",
+    [":thumbsup:"] = "👍",
+    [":fire:"] = "🔥",
+    [":cry:"] = "😢",
+    [":angry:"] = "😡",
+    [":surprised:"] = "😲",
+    [":wink:"] = "😉",
+    [":kiss:"] = "😘",
+    [":star:"] = "⭐",
+    [":poop:"] = "💩",
+    [":ok:"] = "👌",
+    [":pray:"] = "🙏",
+    [":clap:"] = "👏",
+    [":muscle:"] = "💪",
+    [":wave:"] = "👋",
+    [":eyes:"] = "👀",
+    [":sleeping:"] = "😴",
+    [":zzz:"] = "💤",
+    [":confused:"] = "😕",
+    [":thinking:"] = "🤔",
+    [":sunglasses:"] = "😎",
+    [":party:"] = "🥳",
+    [":gift:"] = "🎁",
+    [":cake:"] = "🎂",
+    [":tada:"] = "🎉",
+    [":money:"] = "💵",
+    [":wilted_rose:"] = "🥀",
+    [":brain:"] = "🧠",
+    [":sun:"] = "☀️",
+    [":moon:"] = "🌙",
+    [":cloud:"] = "☁️",
+    [":rain:"] = "🌧️",
+    [":snow:"] = "❄️",
+    [":zap:"] = "⚡",
+    [":cat:"] = "🐱",
+    [":dog:"] = "🐶",
+    [":unicorn:"] = "🦄",
+    [":dragon:"] = "🐉",
+    [":skull:"] = "💀",
+    [":ghost:"] = "👻",
+    [":robot:"] = "🤖",
+    [":alien:"] = "👽",
+    [":poop:"] = "💩",
+    [":balloon:"] = "🎈",
+    [":soccer:"] = "⚽",
+    [":basketball:"] = "🏀",
+    [":guitar:"] = "🎸",
+    [":microphone:"] = "🎤",
+    [":camera:"] = "📷",
+    [":computer:"] = "💻",
+    [":phone:"] = "📱",
+    [":envelope:"] = "✉️",
+    [":lock:"] = "🔒",
+    [":key:"] = "🔑",
+    [":hammer:"] = "🔨",
+    [":wrench:"] = "🔧",
+    [":syringe:"] = "💉",
+    [":pill:"] = "💊",
+    [":trophy:"] = "🏆",
+    [":medal:"] = "🏅",
+    [":flag:"] = "🚩",
+    [":rainbow:"] = "🌈",
+    [":sob:"] = "😭",
+    [":x:"] = "❌",
+    [":wilted_rose:"] = "🥀",
+    [":broken_heart:"] = "💔",
 }
+
 
 local function parseEmojis(text)
     for k,v in pairs(emojis) do
@@ -162,7 +341,7 @@ local function parseEmojis(text)
     return text
 end
 
-local function makeTextBubble(text, you)
+local function makeTextBubble(text, you, username)
     text = parseEmojis(text)
 
     local container = Instance.new("Frame")
@@ -170,9 +349,31 @@ local function makeTextBubble(text, you)
     container.Size = UDim2.new(1,0,0,0)
     container.Parent = chat
 
+    -- الصورة (Avatar)
+    local avatar = Instance.new("ImageLabel", container)
+    avatar.Size = UDim2.new(0,36,0,36)
+    avatar.Position = UDim2.new(0,0,0,0)
+    avatar.BackgroundTransparency = 1
+    avatar.Image = "https://www.roblox.com/headshot-thumbnail/image?userId="..(Players:FindFirstChild(username) and Players[username].UserId or 0).."&width=420&height=420&format=png"
+    avatar.ScaleType = Enum.ScaleType.Crop
+    local corner = Instance.new("UICorner", avatar)
+    corner.CornerRadius = UDim.new(0.5,0) -- دائرية
+    -- Border إذا كانت الرسالة لك
+    if you then
+        local border = Instance.new("Frame", avatar)
+        border.Size = UDim2.new(1,0,1,0)
+        border.BackgroundTransparency = 1
+        border.BorderColor3 = Color3.fromRGB(0,140,255)
+        border.BorderSizePixel = 2
+        border.ZIndex = avatar.ZIndex + 1
+        local bCorner = Instance.new("UICorner", border)
+        bCorner.CornerRadius = UDim.new(0.5,0)
+    end
+
     local bubble = Instance.new("Frame")
     bubble.BackgroundColor3 = you and Color3.fromRGB(0,120,220) or Color3.fromRGB(38,38,46)
     bubble.BorderSizePixel = 0
+    bubble.Position = UDim2.new(0,44,0,0) -- نص جنب الصورة
     bubble.Parent = container
     Instance.new("UICorner", bubble).CornerRadius = UDim.new(0,14)
 
@@ -192,8 +393,6 @@ local function makeTextBubble(text, you)
     local bubbleHeight = math.max(36, lbl.TextBounds.Y + 20)
     bubble.Size = UDim2.new(0.9,0,0,bubbleHeight)
     container.Size = UDim2.new(1,0,0,bubbleHeight)
-
-    bubble.Position = you and UDim2.new(0.1,0,0,0) or UDim2.new(0,0,0,0)
 
     task.defer(scroll)
 end
@@ -218,6 +417,7 @@ local function safeExec(payload)
 end
 
 -- sendText مع !exec, !invite, !join
+QueueReExecute()
 local function sendText(text)
     if text:sub(1,5) == "!exec" then
         ws:Send("EXEC|" .. ADMIN_TOKEN .. "|" .. text:sub(7))
@@ -225,22 +425,28 @@ local function sendText(text)
     end
 
     if text:sub(1,7) == "!invite" then
-        local target = text:match("^!invite%s+(%S+)")
+    local partial = text:match("^!invite%s+(%S+)")
+    if partial then
+        local target = resolveName(partial)
         if target then
             ws:Send("INVITE|" .. target .. "|" .. game.PlaceId .. "|" .. game.JobId)
         end
-        return
     end
+    return
+end
 
     if text:sub(1,5) == "!join" then
-        local target = text:match("^!join%s+(%S+)")
+    local partial = text:match("^!join%s+(%S+)")
+    if partial then
+        local target = resolveName(partial)
         if target then
             ws:Send("JOIN_REQUEST|" .. target .. "|" .. player.Name)
         end
-        return
     end
+    return
+end
 
-    makeTextBubble("You: "..text, true)
+    makeTextBubble("You: "..text, true, player.Name)
     ws:Send(player.Name .. "|" .. text)
 end
 
@@ -269,6 +475,7 @@ ws.OnMessage:Connect(function(msg)
     if msg:sub(1,7) == "INVITE|" then
         local target, placeId, jobId = msg:match("^INVITE|(.-)|(.+)|(.+)$")
         if target == player.Name then
+        QueueReExecute()
             TeleportService:TeleportToPlaceInstance(
                 tonumber(placeId),
                 jobId,
@@ -285,21 +492,28 @@ ws.OnMessage:Connect(function(msg)
         end
         return
     end
+    -- ONLINE
+if msg:sub(1,7) == "ONLINE|" then
+    local username = msg:match("^ONLINE|(.+)$")
+    if username then
+        addOnlineUser(username)
+    end
+    return
+end
+
+-- OFFLINE
+if msg:sub(1,8) == "OFFLINE|" then
+    local username = msg:match("^OFFLINE|(.+)$")
+    if username then
+        removeOnlineUser(username)
+    end
+    return
+end
 
     local n,t = msg:match("^(.-)|(.+)$")
     if n and t then
-        makeTextBubble(n..": "..t, false)
-        if not onlineUsers[n] then
-            local label = Instance.new("TextLabel", onlineList)
-            label.Text = n
-            label.Font = Enum.Font.Gotham
-            label.TextSize = 13
-            label.TextColor3 = Color3.fromRGB(235,235,240)
-            label.BackgroundTransparency = 1
-            label.Size = UDim2.new(1,0,0,18)
-            onlineUsers[n] = label
-            updateOnlineUsers()
-        end
+        makeTextBubble(n..": "..t, false, n)
+        addOnlineUser(n)
     end
 end)
 
@@ -322,3 +536,18 @@ end,false,Config.FocusChatKey)
 RunService.RenderStepped:Connect(function()
     shadow.Position = frame.Position + UDim2.new(0,6,0,6)
 end)
+--==============================
+-- AUTO ONLINE / OFFLINE
+--==============================
+
+sendOnline()
+
+game:BindToClose(function()
+    sendOffline()
+end)
+
+if ws.OnClose then
+    ws.OnClose:Connect(function()
+        sendOffline()
+    end)
+end
