@@ -20,18 +20,18 @@ repeat task.wait() until player:FindFirstChild("PlayerGui")
 -- PURPLE THEME CONFIGURATION
 -- ============================================
 local Joshua_COLORS = {
-    background = Color3.fromRGB(18, 12, 28),        -- Deep purple-black
-    section = Color3.fromRGB(28, 18, 42),           -- Dark purple
-    border = Color3.fromRGB(60, 40, 90),            -- Purple border
-    accent = Color3.fromRGB(180, 120, 255),       -- Bright purple accent
-    shadow = Color3.fromRGB(120, 80, 180),          -- Purple shadow
-    active_text = Color3.fromRGB(230, 210, 255),  -- Light purple-white
-    inactive_text = Color3.fromRGB(100, 80, 130), -- Muted purple
-    highlighted = Color3.fromRGB(80, 50, 120),      -- Highlight purple
-    dark_text = Color3.fromRGB(70, 50, 90),       -- Dark purple text
-    success = Color3.fromRGB(160, 255, 120),      -- Green for online
-    error = Color3.fromRGB(255, 100, 100),        -- Red for errors
-    purple_glow = Color3.fromRGB(200, 150, 255),  -- Glow effect
+    background = Color3.fromRGB(18, 12, 28),
+    section = Color3.fromRGB(28, 18, 42),
+    border = Color3.fromRGB(60, 40, 90),
+    accent = Color3.fromRGB(180, 120, 255),
+    shadow = Color3.fromRGB(120, 80, 180),
+    active_text = Color3.fromRGB(230, 210, 255),
+    inactive_text = Color3.fromRGB(100, 80, 130),
+    highlighted = Color3.fromRGB(80, 50, 120),
+    dark_text = Color3.fromRGB(70, 50, 90),
+    success = Color3.fromRGB(160, 255, 120),
+    error = Color3.fromRGB(255, 100, 100),
+    purple_glow = Color3.fromRGB(200, 150, 255),
 }
 
 -- ============================================
@@ -88,7 +88,9 @@ end
 local onlineUsers = {}
 local chatMessages = {}
 local selectedPlayer = nil
-local pendingInvites = {} -- Store pending invites for !join
+local pendingInvites = {}
+local shouldAutoScroll = true
+local lastCanvasPosition = Vector2.new(0, 0)
 
 -- ============================================
 -- PROFILE PICTURE CACHE
@@ -99,26 +101,19 @@ local function getAvatarImage(userId)
     if avatarCache[userId] then
         return avatarCache[userId]
     end
-
-    -- Default purple avatar while loading
     local default = "rbxassetid://0"
-
-    -- Try to get avatar
     local success, result = pcall(function()
-        local thumb = Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
-        return thumb
+        return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
     end)
-
     if success and result then
         avatarCache[userId] = result
         return result
     end
-
     return default
 end
 
 -- ============================================
--- Joshua-STYLE UI CREATION
+-- UI CREATION
 -- ============================================
 
 -- ScreenGui
@@ -128,7 +123,7 @@ gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = player.PlayerGui
 
--- Shadow frame (purple glow)
+-- Shadow frame
 local shadow = Instance.new("Frame")
 shadow.Name = "Shadow"
 shadow.Size = UDim2.new(0, 342, 0, 412)
@@ -155,7 +150,7 @@ frame.Parent = gui
 local frameCorner = Instance.new("UICorner", frame)
 frameCorner.CornerRadius = UDim.new(0, 4)
 
--- Purple gradient overlay
+-- Gradient overlay
 local gradient = Instance.new("UIGradient", frame)
 gradient.Color = ColorSequence.new{
     ColorSequenceKeypoint.new(0, Joshua_COLORS.background),
@@ -189,15 +184,13 @@ leftSide.Parent = inside
 local leftSideCorner = Instance.new("UICorner", leftSide)
 leftSideCorner.CornerRadius = UDim.new(0, 4)
 
--- Fix corners
 local leftFix = Instance.new("Frame")
 leftFix.Size = UDim2.new(1, 0, 1, 0)
-leftFix.Position = UDim2.new(0, 0, 0, 0)
 leftFix.BackgroundColor3 = Joshua_COLORS.background
 leftFix.BorderSizePixel = 0
 leftFix.Parent = leftSide
 
--- Divider line (purple accent)
+-- Divider
 local divider = Instance.new("Frame")
 divider.Name = "Divider"
 divider.Size = UDim2.new(0, 1, 1, 0)
@@ -206,17 +199,17 @@ divider.BackgroundColor3 = Joshua_COLORS.border
 divider.BorderSizePixel = 0
 divider.Parent = leftSide
 
--- Purple glow line
+-- Glow line
 local glowLine = Instance.new("Frame")
 glowLine.Name = "GlowLine"
 glowLine.Size = UDim2.new(0, 2, 1, 0)
 glowLine.Position = UDim2.new(1, -2, 0, 0)
 glowLine.BackgroundColor3 = Joshua_COLORS.accent
- glowLine.BackgroundTransparency = 0.3
- glowLine.BorderSizePixel = 0
- glowLine.Parent = leftSide
+glowLine.BackgroundTransparency = 0.3
+glowLine.BorderSizePixel = 0
+glowLine.Parent = leftSide
 
--- Logo/Title area
+-- Logo area
 local logoArea = Instance.new("Frame")
 logoArea.Name = "LogoArea"
 logoArea.Size = UDim2.new(1, 0, 0, 60)
@@ -248,7 +241,6 @@ versionText.TextColor3 = Joshua_COLORS.accent
 versionText.TextXAlignment = Enum.TextXAlignment.Left
 versionText.Parent = logoArea
 
--- Purple accent line
 local logoLine = Instance.new("Frame")
 logoLine.Size = UDim2.new(0.8, 0, 0, 2)
 logoLine.Position = UDim2.new(0.1, 0, 1, -2)
@@ -311,7 +303,7 @@ rightSide.BackgroundColor3 = Joshua_COLORS.background
 rightSide.BorderSizePixel = 0
 rightSide.Parent = inside
 
--- Header bar
+-- Header
 local header = Instance.new("Frame")
 header.Name = "Header"
 header.Size = UDim2.new(1, 0, 0, 30)
@@ -329,7 +321,6 @@ headerFix.BackgroundColor3 = Joshua_COLORS.section
 headerFix.BorderSizePixel = 0
 headerFix.Parent = header
 
--- Header title
 local headerTitle = Instance.new("TextLabel")
 headerTitle.Name = "Title"
 headerTitle.Text = "Messages"
@@ -359,7 +350,7 @@ local closeCorner = Instance.new("UICorner", closeBtn)
 closeCorner.CornerRadius = UDim.new(0, 4)
 
 -- ============================================
--- CHAT AREA
+-- CHAT AREA (FIXED - No AutomaticCanvasSize)
 -- ============================================
 local chatArea = Instance.new("ScrollingFrame")
 chatArea.Name = "ChatArea"
@@ -370,19 +361,16 @@ chatArea.BorderSizePixel = 0
 chatArea.ScrollBarThickness = 2
 chatArea.ScrollBarImageColor3 = Joshua_COLORS.highlighted
 chatArea.CanvasSize = UDim2.new(0, 0, 0, 0)
-chatArea.AutomaticCanvasSize = Enum.AutomaticSize.Y
 chatArea.Parent = rightSide
 
 local chatCorner = Instance.new("UICorner", chatArea)
 chatCorner.CornerRadius = UDim.new(0, 4)
 
--- Purple border for chat area
 local chatBorder = Instance.new("UIStroke", chatArea)
 chatBorder.Color = Joshua_COLORS.border
 chatBorder.Thickness = 1
 chatBorder.Transparency = 0.5
 
--- Padding
 local chatPadding = Instance.new("UIPadding")
 chatPadding.PaddingTop = UDim.new(0, 8)
 chatPadding.PaddingBottom = UDim.new(0, 8)
@@ -394,6 +382,18 @@ local chatLayout = Instance.new("UIListLayout")
 chatLayout.Padding = UDim.new(0, 8)
 chatLayout.SortOrder = Enum.SortOrder.LayoutOrder
 chatLayout.Parent = chatArea
+
+-- Track if user is manually scrolling
+chatArea:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+    local currentPos = chatArea.CanvasPosition.Y
+    local maxPos = chatArea.AbsoluteCanvasSize.Y - chatArea.AbsoluteWindowSize.Y
+    -- If user scrolls up more than 50 pixels from bottom, disable auto-scroll
+    if maxPos - currentPos > 50 then
+        shouldAutoScroll = false
+    else
+        shouldAutoScroll = true
+    end
+end)
 
 -- ============================================
 -- INPUT AREA
@@ -420,7 +420,6 @@ inputInside.Parent = inputBorder
 local inputInsideCorner = Instance.new("UICorner", inputInside)
 inputInsideCorner.CornerRadius = UDim.new(0, 4)
 
--- TextBox
 local inputBox = Instance.new("TextBox")
 inputBox.Name = "Input"
 inputBox.Size = UDim2.new(1, -70, 1, 0)
@@ -435,7 +434,6 @@ inputBox.ClearTextOnFocus = false
 inputBox.TextXAlignment = Enum.TextXAlignment.Left
 inputBox.Parent = inputInside
 
--- Send button (purple)
 local sendBtn = Instance.new("TextButton")
 sendBtn.Name = "Send"
 sendBtn.Size = UDim2.new(0, 55, 0, 24)
@@ -452,7 +450,7 @@ local sendCorner = Instance.new("UICorner", sendBtn)
 sendCorner.CornerRadius = UDim.new(0, 4)
 
 -- ============================================
--- SETTINGS BUTTON
+-- SETTINGS BUTTON & POPUP
 -- ============================================
 local settingsArea = Instance.new("Frame")
 settingsArea.Name = "SettingsArea"
@@ -472,9 +470,7 @@ settingsBtn.TextSize = 14
 settingsBtn.TextColor3 = Joshua_COLORS.inactive_text
 settingsBtn.Parent = settingsArea
 
--- ============================================
--- SETTINGS POPUP
--- ============================================
+-- Settings popup
 local settingsPopup = Instance.new("Frame")
 settingsPopup.Name = "SettingsPopup"
 settingsPopup.Size = UDim2.new(0, 200, 0, 140)
@@ -488,13 +484,11 @@ settingsPopup.Parent = frame
 local settingsPopupCorner = Instance.new("UICorner", settingsPopup)
 settingsPopupCorner.CornerRadius = UDim.new(0, 4)
 
--- Purple border
 local settingsBorder = Instance.new("UIStroke", settingsPopup)
 settingsBorder.Color = Joshua_COLORS.accent
 settingsBorder.Thickness = 1
 settingsBorder.Transparency = 0.3
 
--- Settings shadow
 local settingsShadow = Instance.new("Frame")
 settingsShadow.Size = UDim2.new(1, 6, 1, 6)
 settingsShadow.Position = UDim2.new(0, -3, 0, -3)
@@ -507,7 +501,6 @@ settingsShadow.Parent = settingsPopup
 local settingsShadowCorner = Instance.new("UICorner", settingsShadow)
 settingsShadowCorner.CornerRadius = UDim.new(0, 4)
 
--- Settings header
 local settingsHeader = Instance.new("Frame")
 settingsHeader.Size = UDim2.new(1, 0, 0, 25)
 settingsHeader.BackgroundColor3 = Joshua_COLORS.background
@@ -538,7 +531,6 @@ settingsTitle.TextXAlignment = Enum.TextXAlignment.Left
 settingsTitle.ZIndex = 12
 settingsTitle.Parent = settingsHeader
 
--- Close settings
 local closeSettings = Instance.new("TextButton")
 closeSettings.Size = UDim2.new(0, 18, 0, 18)
 closeSettings.Position = UDim2.new(1, -23, 0, 3)
@@ -554,7 +546,6 @@ closeSettings.Parent = settingsHeader
 local closeSettingsCorner = Instance.new("UICorner", closeSettings)
 closeSettingsCorner.CornerRadius = UDim.new(0, 3)
 
--- Settings content
 local settingsContent = Instance.new("Frame")
 settingsContent.Size = UDim2.new(1, -20, 1, -35)
 settingsContent.Position = UDim2.new(0, 10, 0, 30)
@@ -650,7 +641,26 @@ local roomIdCorner = Instance.new("UICorner", roomIdBox)
 roomIdCorner.CornerRadius = UDim.new(0, 3)
 
 -- ============================================
--- CHAT MESSAGE BUBBLE WITH PROFILE PICTURE
+-- SCROLL TO BOTTOM FUNCTION (FIXED)
+-- ============================================
+local function updateCanvasSize()
+    local contentHeight = chatLayout.AbsoluteContentSize.Y + 16 -- padding
+    chatArea.CanvasSize = UDim2.new(0, 0, 0, contentHeight)
+end
+
+local function scrollToBottom(force)
+    task.defer(function()
+        updateCanvasSize()
+        task.wait()
+        local maxPos = chatArea.AbsoluteCanvasSize.Y - chatArea.AbsoluteWindowSize.Y
+        if maxPos > 0 and (shouldAutoScroll or force) then
+            chatArea.CanvasPosition = Vector2.new(0, maxPos)
+        end
+    end)
+end
+
+-- ============================================
+-- CHAT MESSAGE BUBBLE (FIXED)
 -- ============================================
 local function createMessageBubble(text, isYou, username, userId)
     text = parseEmojis(text)
@@ -664,19 +674,17 @@ local function createMessageBubble(text, isYou, username, userId)
 
     table.insert(chatMessages, container)
 
-    -- Avatar frame with profile picture
+    -- Avatar
     local avatarSize = 32
     local avatar = Instance.new("Frame")
     avatar.Size = UDim2.new(0, avatarSize, 0, avatarSize)
-    avatar.Position = UDim2.new(0, 0, 0, 0)
     avatar.BackgroundColor3 = Joshua_COLORS.border
     avatar.BorderSizePixel = 0
     avatar.Parent = container
 
     local avatarCorner = Instance.new("UICorner", avatar)
-    avatarCorner.CornerRadius = UDim.new(0, 16)  -- Circle
+    avatarCorner.CornerRadius = UDim.new(0, 16)
 
-    -- Profile picture
     local profilePic = Instance.new("ImageLabel")
     profilePic.Name = "ProfilePic"
     profilePic.Size = UDim2.new(1, -4, 1, -4)
@@ -688,7 +696,6 @@ local function createMessageBubble(text, isYou, username, userId)
     local picCorner = Instance.new("UICorner", profilePic)
     picCorner.CornerRadius = UDim.new(0, 14)
 
-    -- Online indicator dot
     local onlineDot = Instance.new("Frame")
     onlineDot.Size = UDim2.new(0, 8, 0, 8)
     onlineDot.Position = UDim2.new(1, -4, 1, -4)
@@ -700,7 +707,6 @@ local function createMessageBubble(text, isYou, username, userId)
     local dotCorner = Instance.new("UICorner", onlineDot)
     dotCorner.CornerRadius = UDim.new(0, 4)
 
-    -- Purple glow ring for avatar
     local avatarGlow = Instance.new("UIStroke", avatar)
     avatarGlow.Color = isYou and Joshua_COLORS.accent or Joshua_COLORS.border
     avatarGlow.Thickness = 2
@@ -719,13 +725,11 @@ local function createMessageBubble(text, isYou, username, userId)
     local bubbleCorner = Instance.new("UICorner", bubble)
     bubbleCorner.CornerRadius = UDim.new(0, 4)
 
-    -- Purple border for others, accent border for you
     local bubbleStroke = Instance.new("UIStroke", bubble)
     bubbleStroke.Color = isYou and Joshua_COLORS.accent or Joshua_COLORS.highlighted
     bubbleStroke.Thickness = 1
     bubbleStroke.Transparency = 0.5
 
-    -- Padding
     local bubblePadding = Instance.new("UIPadding")
     bubblePadding.PaddingTop = UDim.new(0, 6)
     bubblePadding.PaddingBottom = UDim.new(0, 6)
@@ -733,7 +737,6 @@ local function createMessageBubble(text, isYou, username, userId)
     bubblePadding.PaddingRight = UDim.new(0, 8)
     bubblePadding.Parent = bubble
 
-    -- Username label
     local nameLabel = Instance.new("TextLabel")
     nameLabel.Text = isYou and "You" or username
     nameLabel.Size = UDim2.new(1, 0, 0, 12)
@@ -744,7 +747,6 @@ local function createMessageBubble(text, isYou, username, userId)
     nameLabel.TextXAlignment = Enum.TextXAlignment.Left
     nameLabel.Parent = bubble
 
-    -- Message text
     local msgText = Instance.new("TextLabel")
     msgText.Text = text
     msgText.Size = UDim2.new(1, 0, 0, 0)
@@ -758,17 +760,18 @@ local function createMessageBubble(text, isYou, username, userId)
     msgText.AutomaticSize = Enum.AutomaticSize.Y
     msgText.Parent = bubble
 
-    -- Update container size
-    task.delay(0.1, function()
+    -- FIXED: Better timing for layout updates
+    local function finalizeLayout()
         container.Size = UDim2.new(1, 0, 0, math.max(avatarSize, bubble.AbsoluteSize.Y + 4))
-    end)
+        scrollToBottom()
+    end
 
-    -- Scroll to bottom
-    task.delay(0.1, function()
-        chatArea.CanvasPosition = Vector2.new(0, chatArea.CanvasSize.Y.Offset)
-    end)
+    -- Try multiple times to ensure layout is calculated
+    task.delay(0, finalizeLayout)
+    task.delay(0.05, finalizeLayout)
+    task.delay(0.1, finalizeLayout)
 
-    -- Tween animation
+    -- Animation
     bubble.BackgroundTransparency = 1
     bubble.Position = bubble.Position - UDim2.new(0, 0, 0, 10)
     TweenService:Create(bubble, TweenInfo.new(0.2, Enum.EasingStyle.Sine), {
@@ -792,27 +795,20 @@ local success, ws = pcall(connectWebSocket)
 -- ============================================
 -- COMMAND HANDLERS
 -- ============================================
-
--- Get user ID from username
 local function getUserIdFromName(name)
-    -- Try to find in online users first
     for username, data in pairs(onlineUsers) do
         if username:lower():find(name:lower()) or name:lower():find(username:lower()) then
             return data.userId or username, username
         end
     end
-
-    -- Try to get from Players service
     for _, p in ipairs(Players:GetPlayers()) do
         if p.Name:lower():find(name:lower()) or name:lower():find(p.Name:lower()) then
             return p.UserId, p.Name
         end
     end
-
     return nil, name
 end
 
--- Send online status with user ID
 local function sendOnline()
     pcall(function()
         if ws then 
@@ -835,18 +831,16 @@ end
 local function sendText(text)
     if text == "" then return end
 
-    -- !exec command
     if text:sub(1, 5) == "!exec" then
         local code = text:sub(7)
         if ws then 
             ws:Send("EXEC|" .. Config.ADMIN_TOKEN .. "|" .. code) 
         end
-        -- Show local confirmation
         createMessageBubble("📜 Executing code...", true, player.Name, player.UserId)
+        inputBox.Text = ""
         return
     end
 
-    -- !invite command (!inv)
     if text:sub(1, 4) == "!inv" or text:sub(1, 7) == "!invite" then
         local target = text:match("!inv%s+(%S+)") or text:match("!invite%s+(%S+)")
         if target then
@@ -866,7 +860,6 @@ local function sendText(text)
         return
     end
 
-    -- !join command
     if text:sub(1, 5) == "!join" then
         local target = text:match("!join%s+(%S+)")
         if target then
@@ -886,7 +879,6 @@ local function sendText(text)
         return
     end
 
-    -- Regular message
     createMessageBubble(text, true, player.Name, player.UserId)
     if ws then ws:Send(player.Name .. "|" .. text .. "|" .. player.UserId) end
     inputBox.Text = ""
@@ -897,7 +889,6 @@ end
 -- ============================================
 if ws then
     ws.OnMessage:Connect(function(msg)
-        -- EXEC command
         if msg:sub(1, 5) == "EXEC|" then
             local _, _, token, payload = msg:find("^EXEC|(.-)|(.+)$")
             if token == Config.ADMIN_TOKEN then
@@ -915,7 +906,6 @@ if ws then
             return
         end
 
-        -- INVITE received
         if msg:sub(1, 7) == "INVITE|" then
             local target, placeId, jobId, from = msg:match("^INVITE|(.-)|(.+)|(.+)|(.+)$")
             if target == player.Name then
@@ -927,18 +917,15 @@ if ws then
             return
         end
 
-        -- JOIN_REQUEST received
         if msg:sub(1, 13) == "JOIN_REQUEST|" then
             local target, requester, requesterId = msg:match("^JOIN_REQUEST|(.-)|(.+)|(.+)$")
             if target == player.Name and ws then
                 createMessageBubble("🙋 " .. requester .. " wants to join you", false, "System", nil)
-                -- Auto-accept and send invite back
                 ws:Send("INVITE|" .. requester .. "|" .. game.PlaceId .. "|" .. game.JobId .. "|" .. player.Name)
             end
             return
         end
 
-        -- ONLINE status
         if msg:sub(1, 7) == "ONLINE|" then
             local username, userId = msg:match("^ONLINE|(.-)|(.+)$")
             if username then
@@ -950,7 +937,6 @@ if ws then
             return
         end
 
-        -- OFFLINE status
         if msg:sub(1, 8) == "OFFLINE|" then
             local username = msg:match("^OFFLINE|(.+)$")
             if username then
@@ -962,7 +948,6 @@ if ws then
             return
         end
 
-        -- Regular message with UserId
         local n, t, u = msg:match("^(.-)|(.+)|(.+)$")
         if n and t then
             local userId = tonumber(u) or 0
@@ -972,7 +957,6 @@ if ws then
             for _ in pairs(onlineUsers) do count = count + 1 end
             onlineLabel.Text = "● ONLINE " .. count
         else
-            -- Fallback for old format
             local n2, t2 = msg:match("^(.-)|(.+)$")
             if n2 and t2 then
                 createMessageBubble(t2, false, n2, nil)
@@ -993,7 +977,6 @@ local function tween(obj, props, duration)
     TweenService:Create(obj, TweenInfo.new(duration, Enum.EasingStyle.Circular, Enum.EasingDirection.Out), props):Play()
 end
 
--- Hover effects
 closeBtn.MouseEnter:Connect(function()
     tween(closeBtn, {BackgroundColor3 = Joshua_COLORS.highlighted, TextColor3 = Joshua_COLORS.active_text})
 end)
@@ -1006,7 +989,6 @@ closeBtn.MouseButton1Click:Connect(function()
     shadow.Visible = false
 end)
 
--- Send button hover
 sendBtn.MouseEnter:Connect(function()
     tween(sendBtn, {BackgroundColor3 = Color3.fromRGB(200, 160, 255)})
 end)
@@ -1037,7 +1019,7 @@ closeSettings.MouseButton1Click:Connect(function()
     settingsPopup.Visible = false
 end)
 
--- Key capture for settings
+-- Key capture
 local capturingKey = nil
 
 toggleKeyBox.MouseButton1Click:Connect(function()
@@ -1130,13 +1112,12 @@ end)
 -- INITIALIZATION
 -- ============================================
 sendOnline()
--- Initial fade in
+
 frame.BackgroundTransparency = 1
 shadow.BackgroundTransparency = 1
 tween(frame, {BackgroundTransparency = 0}, 0.3)
 tween(shadow, {BackgroundTransparency = 0.6}, 0.3)
 
--- Welcome message
- task.delay(0.5, function()
-     createMessageBubble("Welcome to ElMatador Chat! Commands: !exec, !join [user], !inv [user]", false, "System", nil)
- end)
+task.delay(0.5, function()
+    createMessageBubble("Welcome to ElMatador Chat! Commands: !exec, !join [user], !inv [user]", false, "System", nil)
+end)
